@@ -266,30 +266,5 @@ private fun BottomMenu(
     }
 }
 
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
-@Composable
-private fun Preview() {
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.DarkGray)
-        )
-        BottomMenu(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .height(160.dp)
-                .fillMaxWidth()
-                .background(Color.Black),
-            switchable = true,
-            onGalleryClick = { },
-            onShutterClick = { },
-            onSwitchClick = { }
-        )
-    }
-}
-
 
 
