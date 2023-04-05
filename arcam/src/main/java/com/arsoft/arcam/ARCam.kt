@@ -4,12 +4,8 @@ import android.Manifest
 import android.net.Uri
 import android.os.Build
 import android.util.Size
-import android.view.Gravity
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.IntRange
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -21,6 +17,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +35,8 @@ import com.arsoft.arcam.exts.checkRequirePermissions
 import com.arsoft.arcam.exts.getCameraProvider
 import com.arsoft.arcam.model.LensOptions
 import com.arsoft.arcam.utils.capture
+import com.arsoft.argalleryview.module.main.model.ARGalleryPicker
+import com.arsoft.argalleryview.module.main.model.ARGalleryPickerRequest
 
 val REQUIRE_PERMISSIONS =
     when {
@@ -62,12 +62,23 @@ val REQUIRE_PERMISSIONS =
     }
 
 
-sealed class CameraActions {
+internal sealed class CameraActions {
     object OpenGallery : CameraActions()
     object TakePicture : CameraActions()
     object SwitchCamera : CameraActions()
 }
 
+/**
+ * Example of usage:
+ * @param quality The quality of image default value is 95.
+ * @param lensOptions Determine which camera to use front or back Camera
+ * default value is [LensOptions.BOTH] using both front and back camera.
+ * @param count The maximum of image you can select in the gallery
+ * default value is 100.
+ * @param onResult Returns list of uris.
+ * @param onError Returns errors.
+ * @param onBackPressed Returns when user perform back pressed or tap the close button.
+ */
 @Composable
 fun ARCam(
     @IntRange(from = 0, to = 100) quality: Int = 95,
@@ -86,29 +97,12 @@ fun ARCam(
             .setTargetResolution(Size(720, 1280))
             .build()
     }
-    var openGallery by remember { mutableStateOf(false) }
-    val pickMediaContract =
-        ActivityResultContracts.PickVisualMedia()
-            .takeIf { count == 1 }
-            ?: ActivityResultContracts.PickMultipleVisualMedia(count)
-
-    val pickMedia = rememberLauncherForActivityResult(
-        contract = pickMediaContract,
-        onResult = { result ->
-            when (result) {
-                is Uri -> {
-
-                }
-                is ArrayList<*> -> {
-                    result.filterIsInstance(Uri::class.java).let {
-                        if (it.size > count) {
-                            Toast.makeText(
-                                context,
-                                "Select up to $count items.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ARGalleryPicker(count),
+        onResult = { uris ->
+            when {
+                uris.isNotEmpty() -> {
+                    onResult(uris)
                 }
             }
         }
@@ -126,45 +120,36 @@ fun ARCam(
     }
 
     if (permissionComplete) {
-        if (openGallery) {
-            ARGallery()
-        } else {
-            CameraPreview(
-                imageCapture = imageCapture,
-                lensOptions = lensOptions,
-                lensFacing = lensFacing,
-                onActions = { action ->
-                    when (action) {
-                        CameraActions.OpenGallery -> {
-//                        pickMedia.launch(
-//                            PickVisualMediaRequest(
-//                                ActivityResultContracts.PickVisualMedia.ImageOnly
-//                            )
-//                        )
-                            openGallery = true
-                        }
-                        CameraActions.SwitchCamera -> {
-                            lensFacing = CameraSelector.LENS_FACING_FRONT
-                                .takeIf { lensFacing == CameraSelector.LENS_FACING_BACK }
-                                ?: CameraSelector.LENS_FACING_BACK
-                        }
-                        CameraActions.TakePicture -> {
-                            imageCapture.capture(
-                                context,
-                                lensFacing,
-                                onImageCapture = {
-                                    onResult(listOf(it))
-                                },
-                                onError = {
-                                    onError(it.message ?: "Unknown Error")
-                                }
-                            )
-                        }
+        CameraPreview(
+            imageCapture = imageCapture,
+            lensOptions = lensOptions,
+            lensFacing = lensFacing,
+            onActions = { action ->
+                when (action) {
+                    CameraActions.OpenGallery -> {
+                        galleryLauncher.launch(ARGalleryPickerRequest())
                     }
-                },
-                onBackPressed = onBackPressed
-            )
-        }
+                    CameraActions.SwitchCamera -> {
+                        lensFacing = CameraSelector.LENS_FACING_FRONT
+                            .takeIf { lensFacing == CameraSelector.LENS_FACING_BACK }
+                            ?: CameraSelector.LENS_FACING_BACK
+                    }
+                    CameraActions.TakePicture -> {
+                        imageCapture.capture(
+                            context,
+                            lensFacing,
+                            onImageCapture = {
+                                onResult(listOf(it))
+                            },
+                            onError = {
+                                onError(it.message ?: "Unknown Error")
+                            }
+                        )
+                    }
+                }
+            },
+            onBackPressed = onBackPressed
+        )
     }
 }
 
@@ -220,6 +205,19 @@ private fun CameraPreview(
             onShutterClick = { onActions(CameraActions.TakePicture) },
             onSwitchClick = { onActions(CameraActions.SwitchCamera) }
         )
+        IconButton(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 12.dp, top = 12.dp),
+            onClick = onBackPressed
+        ) {
+            Icon(
+                modifier = Modifier.size(42.dp),
+                painter = painterResource(R.drawable.ic_close_camera),
+                contentDescription = null,
+                tint = Color.White
+            )
+        }
     }
 }
 
@@ -239,11 +237,10 @@ private fun BottomMenu(
         Image(
             modifier = Modifier
                 .size(42.dp)
-                .clip(CircleShape)
                 .clickable { onGalleryClick() },
             contentScale = ContentScale.Crop,
             alignment = Alignment.Center,
-            painter = painterResource(R.drawable.ic_image_placeholder),
+            painter = painterResource(R.drawable.ic_gallery),
             contentDescription = "Gallery",
             colorFilter = ColorFilter.tint(Color.White)
         )
