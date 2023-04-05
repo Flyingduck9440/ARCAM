@@ -4,6 +4,8 @@ import android.Manifest
 import android.net.Uri
 import android.os.Build
 import android.util.Size
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.annotation.IntRange
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -15,6 +17,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,45 +35,58 @@ import com.arsoft.arcam.exts.checkRequirePermissions
 import com.arsoft.arcam.exts.getCameraProvider
 import com.arsoft.arcam.model.LensOptions
 import com.arsoft.arcam.utils.capture
+import com.arsoft.argalleryview.module.main.model.ARGalleryPicker
+import com.arsoft.argalleryview.module.main.model.ARGalleryPickerRequest
 
 val REQUIRE_PERMISSIONS =
-    Build.VERSION.SDK_INT.let { sdk ->
-        when {
-            sdk >= Build.VERSION_CODES.TIRAMISU -> {
-                arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.READ_MEDIA_IMAGES
-                )
-            }
-            sdk > Build.VERSION_CODES.P -> {
-                arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                )
-            }
-            else -> {
-                arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                )
-            }
+    when {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+            arrayOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.READ_MEDIA_IMAGES
+            )
+        }
+        Build.VERSION.SDK_INT > Build.VERSION_CODES.P -> {
+            arrayOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            )
+        }
+        else -> {
+            arrayOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            )
         }
     }
 
-sealed class CameraActions {
+
+internal sealed class CameraActions {
     object OpenGallery : CameraActions()
     object TakePicture : CameraActions()
     object SwitchCamera : CameraActions()
 }
 
+/**
+ * Example of usage:
+ * @param quality The quality of image default value is 95.
+ * @param lensOptions Determine which camera to use front or back Camera
+ * default value is [LensOptions.BOTH] using both front and back camera.
+ * @param count The maximum of image you can select in the gallery
+ * default value is 100.
+ * @param onResult Returns list of uris.
+ * @param onError Returns errors.
+ * @param onBackPressed Returns when user perform back pressed or tap the close button.
+ */
 @Composable
 fun ARCam(
     @IntRange(from = 0, to = 100) quality: Int = 95,
     lensOptions: LensOptions = LensOptions.BOTH,
-    count: Int = Int.MAX_VALUE,
+    @IntRange(from = 1, to = 100) count: Int = 100,
     onResult: (uri: List<Uri>) -> Unit,
-    onError: (msg: String) -> Unit
+    onError: (msg: String) -> Unit,
+    onBackPressed: () -> Unit
 ) {
     val context = LocalContext.current
     var permissionComplete by remember { mutableStateOf(false) }
@@ -80,6 +97,16 @@ fun ARCam(
             .setTargetResolution(Size(720, 1280))
             .build()
     }
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ARGalleryPicker(count),
+        onResult = { uris ->
+            when {
+                uris.isNotEmpty() -> {
+                    onResult(uris)
+                }
+            }
+        }
+    )
 
     LaunchedEffect(context) {
         when (context.checkRequirePermissions()) {
@@ -100,7 +127,7 @@ fun ARCam(
             onActions = { action ->
                 when (action) {
                     CameraActions.OpenGallery -> {
-
+                        galleryLauncher.launch(ARGalleryPickerRequest())
                     }
                     CameraActions.SwitchCamera -> {
                         lensFacing = CameraSelector.LENS_FACING_FRONT
@@ -120,7 +147,8 @@ fun ARCam(
                         )
                     }
                 }
-            }
+            },
+            onBackPressed = onBackPressed
         )
     }
 }
@@ -130,7 +158,8 @@ private fun CameraPreview(
     imageCapture: ImageCapture,
     lensOptions: LensOptions,
     lensFacing: Int,
-    onActions: (CameraActions) -> Unit
+    onActions: (CameraActions) -> Unit,
+    onBackPressed: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -152,6 +181,12 @@ private fun CameraPreview(
         preview.setSurfaceProvider(previewView.surfaceProvider)
     }
 
+    BackHandler {
+        cameraProvider.unbindAll()
+        previewView.removeAllViews()
+        onBackPressed()
+    }
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -170,6 +205,19 @@ private fun CameraPreview(
             onShutterClick = { onActions(CameraActions.TakePicture) },
             onSwitchClick = { onActions(CameraActions.SwitchCamera) }
         )
+        IconButton(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 12.dp, top = 12.dp),
+            onClick = onBackPressed
+        ) {
+            Icon(
+                modifier = Modifier.size(42.dp),
+                painter = painterResource(R.drawable.ic_close_camera),
+                contentDescription = null,
+                tint = Color.White
+            )
+        }
     }
 }
 
@@ -183,17 +231,16 @@ private fun BottomMenu(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(52.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Image(
             modifier = Modifier
                 .size(42.dp)
-                .clip(CircleShape)
                 .clickable { onGalleryClick() },
             contentScale = ContentScale.Crop,
             alignment = Alignment.Center,
-            painter = painterResource(R.drawable.ic_image_placeholder),
+            painter = painterResource(R.drawable.ic_gallery),
             contentDescription = "Gallery",
             colorFilter = ColorFilter.tint(Color.White)
         )
