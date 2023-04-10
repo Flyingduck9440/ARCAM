@@ -22,13 +22,15 @@ internal fun ImageCapture.capture(
     val outputDirectory = context.cacheDir
     val tmpFile = createFile(outputDirectory, FILENAME, FILE_EXTENSION)
     val outputFileOptions = getOutputFileOptions(lensFacing, tmpFile)
+    val executors = Executors.newSingleThreadExecutor()
 
     this.takePicture(
         outputFileOptions,
-        Executors.newSingleThreadExecutor(),
+        executors,
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 outputFileResults.savedUri?.let(onImageCapture)
+                executors.shutdown()
             }
 
             override fun onError(exception: ImageCaptureException) {
