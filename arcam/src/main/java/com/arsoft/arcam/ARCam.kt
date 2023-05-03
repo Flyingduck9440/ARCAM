@@ -11,16 +11,30 @@ import androidx.annotation.IntRange
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,12 +61,14 @@ val REQUIRE_PERMISSIONS =
                 Manifest.permission.READ_MEDIA_IMAGES
             )
         }
+
         Build.VERSION.SDK_INT > Build.VERSION_CODES.P -> {
             arrayOf(
                 Manifest.permission.CAMERA,
                 Manifest.permission.READ_EXTERNAL_STORAGE
             )
         }
+
         else -> {
             arrayOf(
                 Manifest.permission.CAMERA,
@@ -95,7 +111,13 @@ fun ARCam(
     val imageCapture: ImageCapture = remember {
         ImageCapture.Builder()
             .setJpegQuality(quality)
-            .setTargetResolution(Size(720, 1280))
+            .setResolutionSelector(
+                ResolutionSelector.Builder().setResolutionStrategy(
+                    ResolutionStrategy(
+                        Size(720, 1280), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                    )
+                ).build()
+            )
             .build()
     }
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -110,8 +132,8 @@ fun ARCam(
     )
     val cameraPermissionRequestLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
-        onResult = {
-            if (it.values.all { it }) {
+        onResult = { result ->
+            if (result.values.all { it }) {
                 permissionComplete = true
             } else {
                 onError("Permission denied. Cannot access camera.")
@@ -123,7 +145,21 @@ fun ARCam(
         when (context.checkRequirePermissions()) {
             true -> {
                 permissionComplete = true
+                lensFacing = when (lensOptions) {
+                    LensOptions.BACK_ONLY -> {
+                        CameraSelector.LENS_FACING_BACK
+                    }
+
+                    LensOptions.FRONT_ONLY -> {
+                        CameraSelector.LENS_FACING_FRONT
+                    }
+
+                    LensOptions.BOTH -> {
+                        CameraSelector.LENS_FACING_BACK
+                    }
+                }
             }
+
             false -> {
                 cameraPermissionRequestLauncher.launch(REQUIRE_PERMISSIONS)
             }
@@ -140,11 +176,13 @@ fun ARCam(
                     CameraActions.OpenGallery -> {
                         galleryLauncher.launch(ARGalleryPickerRequest())
                     }
+
                     CameraActions.SwitchCamera -> {
                         lensFacing = CameraSelector.LENS_FACING_FRONT
                             .takeIf { lensFacing == CameraSelector.LENS_FACING_BACK }
                             ?: CameraSelector.LENS_FACING_BACK
                     }
+
                     CameraActions.TakePicture -> {
                         imageCapture.capture(
                             context,
