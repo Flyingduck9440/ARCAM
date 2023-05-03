@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Size
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.IntRange
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -107,6 +108,16 @@ fun ARCam(
             }
         }
     )
+    val cameraPermissionRequestLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = {
+            if (it.values.all { it }) {
+                permissionComplete = true
+            } else {
+                onError("Permission denied. Cannot access camera.")
+            }
+        }
+    )
 
     LaunchedEffect(context) {
         when (context.checkRequirePermissions()) {
@@ -114,7 +125,7 @@ fun ARCam(
                 permissionComplete = true
             }
             false -> {
-                onError("Need permission")
+                cameraPermissionRequestLauncher.launch(REQUIRE_PERMISSIONS)
             }
         }
     }
